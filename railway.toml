@@ -1,0 +1,19 @@
+[build]
+builder = "nixpacks"
+installCommand = "npm install --production --no-audit"
+buildCommand = ""
+startCommand = "node server.js"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[[build.envs]]
+name = "NODE_ENV"
+value = "production"
+
+[[build.envs]]
+name = "NODE_VERSION"
+value = "18"
