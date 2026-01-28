@@ -144,3 +144,23 @@ app.get('/health', (req, res) => {
     version: '1.0.0'
   });
 });
+
+app.post('/api/backup/notion', async (req, res) => {
+  try {
+    const response = await notion.databases.query({
+      database_id: process.env.NOTION_DATABASE_ID,
+    });
+    
+    const backupData = {
+      timestamp: new Date().toISOString(),
+      count: response.results.length,
+      data: response.results
+    };
+    
+    // Сохранить в Railway Storage
+    // Или отправить в S3/GCS
+    res.json({ success: true, backup: backupData });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
