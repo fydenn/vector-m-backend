@@ -135,3 +135,12 @@ app.post('/api/webhook/make', async (req, res) => {
 app.listen(process.env.PORT || 3000, () => {
   console.log(`Server running on port ${process.env.PORT || 3000}`);
 });
+
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    service: 'Vector-M Backend',
+    version: '1.0.0'
+  });
+});
