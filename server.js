@@ -11,7 +11,7 @@ app.use(express.json());
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 function createOpenAIClient() {
   const apiKey = process.env.OPENAI_API_KEY;
-  const baseURL = process.env.OPENAI_BASE_URL || 'https://api.vsegpt.ru/v1';
+  const baseURL = process.env.OPENAI_BASE_URL || 'https://api.vsegpt.ru/v1/chat/completions';
   const model = process.env.OPENAI_MODEL || 'gpt-4';
   
   console.log(`🤖 OpenAI Config: ${baseURL}, Model: ${model}`);
