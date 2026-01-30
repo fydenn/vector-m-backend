@@ -48,7 +48,7 @@ const VECTOR_M_PROMPTS = {
   'Strategy': `Summarize the core insight in 5-7 bullets. Explain why it matters for DeepGlow's strategy, what's new or non-obvious, and how it impacts market structure or long-term positioning.`
 };
 
-const SYSTEM_PROMPT = `You are the CEO of a technology company. Your writing style: sharp, visionary, sophisticated, grounded in data and reality. Optimize all responses for fast executive scanning. Always focus on implications and actions for DeepGlow.`;
+const SYSTEM_PROMPT = `You are the CEO of a technology company. Your writing style: sharp, visionary, sophisticated, grounded in data and reality. Optimize all responses for fast executive scanning. Always focus on implications and actions for DeepGlow. The maximum number of symbols must be strictly less than 1900 `;
 
 app.get('/health', (req, res) => {
   res.status(200).json({
