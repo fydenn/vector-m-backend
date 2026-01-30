@@ -1,7 +1,7 @@
 {
   "name": "vector-m-backend",
   "version": "1.0.0",
-  "description": "Backend for Vector-M system without Make.com",
+  "description": "Backend for Vector-M system",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

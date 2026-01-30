@@ -9,7 +9,24 @@ app.use(cors());
 app.use(express.json());
 
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function createOpenAIClient() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  const baseURL = process.env.OPENAI_BASE_URL || 'https://api.vsegpt.ru/v1/chat/completions';
+  const model = process.env.OPENAI_MODEL || 'gpt-4';
+  
+  console.log(`🤖 OpenAI Config: ${baseURL}, Model: ${model}`);
+  
+  return new OpenAI({
+    apiKey: apiKey,
+    baseURL: baseURL,
+    defaultHeaders: {
+      'Authorization': `Bearer ${apiKey}`
+    },
+    timeout: 30000 // 30 секунд timeout
+  });
+}
+
+const openai = createOpenAIClient();
 
 const VECTOR_M_PROMPTS = {
   'Thought leadership': `Extract 1-2 sharp, contrarian insights that could be turned into a short thought leadership post. Highlight tensions, reframing opportunities, or challenged assumptions. Avoid fluff. Write in a confident, clear voice suitable for a public post.`,
