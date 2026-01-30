@@ -148,7 +148,7 @@ async function createNotionPage(intent, intentNote, pageData) {
       database_id: process.env.NOTION_DATABASE_ID 
     },
     properties: {
-      'Title': {
+      'Name': {
         title: [
           {
             type: 'text',
@@ -202,71 +202,66 @@ async function createNotionPage(intent, intentNote, pageData) {
 }
 
 // Асинхронная генерация AI Summary
-async function generateAndUpdateAISummary(pageId, intent, content) {
+async function processAIAndUpdateNotion(pageId, intent, content, title) {
   try {
-    console.log(`🤖 Генерация AI Summary для ${pageId}...`);
+    console.log(`🤖 Начинаю генерацию AI Summary для ${pageId}...`);
     
-    const prompt = VECTOR_M_PROMPTS[intent] || VECTOR_M_PROMPTS['Research'];
-    const systemPrompt = `Ты — CEO технологической компании DeepGlow. Твой стиль: острый, дальновидный, основанный на данных.`;
+    // 1. Генерируем AI Summary
+    const aiSummary = await generateAISummary(intent, content);
+    console.log(`✅ AI Summary сгенерирован (${aiSummary.length} chars)`);
     
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: `${prompt}\n\nТекст: ${content.substring(0, 4000)}` }
-      ],
-      max_tokens: 500,
-      temperature: 0.7
-    });
+    // 2. Определяем Next Best Action и Priority
+    const nextBestAction = getNextBestAction(intent);
+    const priority = getPriority(intent);
     
-    const aiSummary = completion.choices[0].message.content;
-    console.log(`✅ AI Summary сгенерирован (${aiSummary.length} символов)`);
-    
-    // Обновляем страницу в Notion
+    // 3. Обновляем страницу в Notion с ВСЕМИ полями из вашей базы
     await notion.pages.update({
       page_id: pageId,
       properties: {
         'AI Summary': {
-          rich_text: [
-            {
-              type: 'text',
-              text: { content: aiSummary }
-            }
-          ]
+          rich_text: [{ text: { content: aiSummary } }]
         },
-        'Status': {
-          select: { name: 'Done' }
+        'Status': { select: { name: 'Done' } },
+        'Next Best Action': { 
+          rich_text: [{ text: { content: nextBestAction } }] 
+        },
+        'Priority': { select: { name: priority } },
+        'AI Summary Tone': {  // Это формула, но Notion сам ее рассчитает
+          rich_text: [{ text: { content: '' } }]  // Оставляем пустым
+        },
+        'Direction Type': {  // Добавляем по умолчанию
+          select: { name: 'Analyse' }
         }
       }
     });
     
-    console.log(`🎉 Страница ${pageId} обновлена с AI Summary`);
+    console.log(`🎉 Страница ${pageId} обновлена в Notion`);
+    
+    // 4. Отправляем уведомление в Slack если P0/P1
+    if (priority === 'P0' || priority === 'P1') {
+      await sendSlackNotification(title, intent, priority, nextBestAction, pageId);
+    }
     
   } catch (error) {
-    console.error(`❌ Ошибка генерации AI Summary для ${pageId}:`, error.message);
+    console.error(`❌ Ошибка обработки страницы ${pageId}:`, error);
     
-    // Обновляем с ошибкой
+    // Обновляем статус на ошибку
     try {
       await notion.pages.update({
         page_id: pageId,
         properties: {
+          'Status': { select: { name: 'Parked' } },
           'AI Summary': {
-            rich_text: [
-              {
-                type: 'text',
-                text: { 
-                  content: `❌ Ошибка генерации: ${error.message.substring(0, 1000)}` 
-                }
-              }
-            ]
-          },
-          'Status': {
-            select: { name: 'Parked' }
+            rich_text: [{ 
+              text: { 
+                content: `❌ Ошибка генерации AI Summary: ${error.message}` 
+              } 
+            }]
           }
         }
       });
     } catch (notionError) {
-      console.error('Не удалось записать ошибку в Notion:', notionError);
+      console.error('Не удалось обновить статус ошибки в Notion:', notionError);
     }
   }
 }
