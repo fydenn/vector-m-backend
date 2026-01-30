@@ -38,6 +38,21 @@ const VECTOR_M_PROMPTS = {
   'Strategy': `Обобщи основную мысль в 5-7 пунктах. Объясни, почему это важно для стратегии DeepGlow, что нового или неочевидного и как это влияет на структуру рынка или долгосрочное позиционирование.`
 };
 
+app.get('/api/database-info', async (req, res) => {
+  try {
+    const database = await notion.databases.retrieve({
+      database_id: process.env.NOTION_DATABASE_ID
+    });
+    
+    res.json({
+      title: database.title,
+      properties: database.properties
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Health check
 app.get('/health', (req, res) => {
