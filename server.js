@@ -61,10 +61,34 @@ app.get('/health', (req, res) => {
 
 // Main endpoint
 app.post('/api/capture', async (req, res) => {
-  try {
+  try{
     const { intent, intentNote, pageData } = req.body;
     
     console.log(`📥 Получен сигнал: ${intent}`);
+    console.log(`📏 Длина контента: ${pageData.content?.length || 0} символов`);
+    
+    // ВАЛИДАЦИЯ: проверяем, что контент не превышает 2000 символов
+    const MAX_CONTENT_LENGTH = 2000;
+    let content = pageData.content || '';
+    
+    if (content.length > MAX_CONTENT_LENGTH) {
+      console.warn(`⚠️ Контент превышает ${MAX_CONTENT_LENGTH} символов (${content.length}). Сокращаем...`);
+      
+      // Ищем последнее предложение до лимита
+      const lastSentenceEnd = content.lastIndexOf('. ', MAX_CONTENT_LENGTH - 100);
+      const lastParagraphEnd = content.lastIndexOf('\n\n', MAX_CONTENT_LENGTH - 100);
+      
+      const cutPoint = Math.max(
+        lastSentenceEnd > 50 ? lastSentenceEnd + 1 : MAX_CONTENT_LENGTH,
+        lastParagraphEnd > 50 ? lastParagraphEnd + 2 : MAX_CONTENT_LENGTH,
+        MAX_CONTENT_LENGTH
+      );
+      
+      content = content.substring(0, cutPoint) + 
+        `\n\n[📝 Внимание: контент сокращен сервером с ${pageData.content.length} до ${cutPoint} символов. Полный текст: ${pageData.url}]`;
+      
+      console.log(`✅ Сокращено до ${content.length} символов`);
+    }
     
     // СОЗДАЕМ СТРАНИЦУ С ПРАВИЛЬНЫМИ ИМЕНАМИ ПОЛЕЙ
     const notionPage = await notion.pages.create({
