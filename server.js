@@ -48,7 +48,7 @@ const VECTOR_M_PROMPTS = {
   'Strategy': `Summarize the core insight in 5-7 bullets. Explain why it matters for DeepGlow's strategy, what's new or non-obvious, and how it impacts market structure or long-term positioning.`
 };
 
-const SYSTEM_PROMPT = `You are the CEO of a technology company. Your writing style: sharp, visionary, sophisticated, grounded in data and reality. Optimize all responses for fast executive scanning. Always focus on implications and actions for DeepGlow. The maximum number of symbols must be strictly less than 1900 `;
+const SYSTEM_PROMPT = `You are the CEO of a technology company. Your writing style: sharp, visionary, sophisticated, grounded in data and reality. Optimize all responses for fast executive scanning. Always focus on implications and actions for DeepGlow.`;
 
 app.get('/health', (req, res) => {
   res.status(200).json({
@@ -58,62 +58,131 @@ app.get('/health', (req, res) => {
   });
 });
 
+
+
+function splitContentIntoBlocks(content, maxBlockSize = 2000) {
+  const blocks = [];
+  let currentIndex = 0;
+  
+  while (currentIndex < content.length) {
+    let blockEnd = currentIndex + maxBlockSize;
+    
+    // Стараемся не разрывать слова и предложения
+    if (blockEnd < content.length) {
+      // Ищем ближайший разрыв строки или точку
+      const nextNewline = content.indexOf('\n', blockEnd - 100);
+      const nextPeriod = content.indexOf('. ', blockEnd - 100);
+      const nextSpace = content.indexOf(' ', blockEnd - 50);
+      
+      if (nextNewline > currentIndex && nextNewline < currentIndex + maxBlockSize + 100) {
+        blockEnd = nextNewline + 1;
+      } else if (nextPeriod > currentIndex && nextPeriod < currentIndex + maxBlockSize + 100) {
+        blockEnd = nextPeriod + 1;
+      } else if (nextSpace > currentIndex && nextSpace < currentIndex + maxBlockSize + 50) {
+        blockEnd = nextSpace + 1;
+      }
+    }
+    
+    const blockContent = content.substring(currentIndex, Math.min(blockEnd, content.length));
+    
+    blocks.push({
+      object: 'block',
+      type: 'paragraph',
+      paragraph: {
+        rich_text: [{
+          type: 'text',
+          text: { content: blockContent }
+        }]
+      }
+    });
+    
+    currentIndex = blockEnd;
+  }
+  
+  return blocks;
+}
+
 // Main endpoint
 app.post('/api/capture', async (req, res) => {
   try {
     const { intent, intentNote, pageData } = req.body;
     
-    console.log(`📥 Получен сигнал: ${intent}`);
+    console.log(`📥 Получен сигнал: ${intent}, длина контента: ${pageData.content?.length || 0}`);
     
-    // СОЗДАЕМ СТРАНИЦУ С ПРАВИЛЬНЫМИ ИМЕНАМИ ПОЛЕЙ
+    // Ограничиваем общую длину контента (например, 10000 символов)
+    const maxContentLength = 10000;
+    let content = pageData.content || '';
+    
+    if (content.length > maxContentLength) {
+      console.log(`⚠️ Контент сокращен с ${content.length} до ${maxContentLength} символов`);
+      
+      // Умное сокращение - ищем последнее предложение до лимита
+      const lastSentenceEnd = content.lastIndexOf('. ', maxContentLength - 100);
+      const lastParagraphEnd = content.lastIndexOf('\n\n', maxContentLength - 100);
+      const cutPoint = Math.max(lastSentenceEnd, lastParagraphEnd, maxContentLength);
+      
+      content = content.substring(0, cutPoint) + 
+        `\n\n[📝 Контент сокращен. Полный текст: ${pageData.url}]`;
+    }
+    
+    // Разбиваем контент на блоки
+    const contentBlocks = splitContentIntoBlocks(content);
+    
+    // Создаем страницу в Notion
     const notionPage = await notion.pages.create({
       parent: { database_id: process.env.NOTION_DATABASE_ID },
       properties: {
-        'Name': {
+        'Title': {
           title: [{ text: { content: pageData.title || 'Без названия' } }]
         },
-        'Source URL': { 
-          url: pageData.url || 'https://example.com' 
-        },
-        'Intent': { 
-          select: { name: intent } 
-        },
+        'Source URL': { url: pageData.url || 'https://example.com' },
+        'Intent': { select: { name: intent } },
         'Intent Note': {
           rich_text: [{ text: { content: intentNote } }]
         },
-        'Status': { 
-          select: { name: 'New' } 
+        'Status': { select: { name: 'New' } },
+        'Content Length': {
+          number: content.length
         }
       },
       children: [
+        // Добавляем мета-информацию как отдельный блок
         {
           object: 'block',
           type: 'paragraph',
           paragraph: {
             rich_text: [{
-              text: { content: pageData.content || 'Контент не захвачен' }
+              type: 'text',
+              text: { 
+                content: `📄 Ссылка: ${pageData.url}\n\n📊 Длина оригинала: ${pageData.fullLength || content.length} символов\n📝 Длина в базе: ${content.length} символов\n\n---\n`
+              }
             }]
           }
-        }
+        },
+        // Добавляем все блоки с контентом
+        ...contentBlocks
       ]
     });
 
-    console.log(`✅ Страница создана: ${notionPage.id}`);
+    console.log(`✅ Страница создана: ${notionPage.id}, блоков: ${contentBlocks.length + 1}`);
     
     // Немедленно возвращаем ответ
     res.json({
       success: true,
       pageId: notionPage.id,
-      message: 'Signal captured. AI Summary will be generated shortly.'
+      message: 'Signal captured',
+      blocksCount: contentBlocks.length,
+      contentLength: content.length
     });
     
     // Асинхронно обрабатываем AI Summary
-    processAIAndUpdateNotion(notionPage.id, intent, pageData.content, pageData.title);
+    processAIAndUpdateNotion(notionPage.id, intent, content, pageData.title);
     
   } catch (error) {
     console.error('❌ Ошибка захвата:', error);
     res.status(500).json({ 
-      error: error.message
+      error: error.message,
+      details: 'Check server logs for more information'
     });
   }
 });
