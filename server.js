@@ -11,18 +11,27 @@ app.use(express.json());
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Реестр промптов Vector-M
 const VECTOR_M_PROMPTS = {
-  'Thought leadership': `Извлеки 1-2 точных, контринтуитивных инсайта, которые можно превратить в короткий пост для экспертного позиционирования. Подчеркни противоречия, возможности для переосмысления или оспариваемые предположения. Избегай "воды". Пиши уверенным, ясным языком, подходящим для публичного поста.`,
-  'Research': `Обобщи основную мысль в 5-7 пунктах. Выдели ключевые данные и отметь любые последствия, риски или возможности для DeepGlow. Объясни, что нового или неочевидного и почему это важно в контексте нативных для ИИ технологий.`,
-  'IR/Data room': `Выдели ключевые моменты для инвесторов, финансовые импликации и потенциальное влияние на оценку компании. Акцентируй внимание на данных, метриках и трендах.`,
-  'Share with team': `Обобщи основные идеи, которые важно донести команде. Выдели практические выводы, действия и контекст для разных отделов.`,
-  'Product direction': `Проанализируй, как эта информация влияет на развитие продукта. Выдели тренды, возможности и угрозы для продуктовой стратегии.`,
-  'Competitive landscape': `Выдели, что это говорит о конкурентах, заменителях или возникающих угрозах. Сосредоточься на стратегических сигналах, сдвигах в позиционировании и направлении рынка — не на списках функций.`,
-  'BD': `Подчеркни последствия для партнёрств, каналов или экосистемы. Определи, кому это может быть важно, почему и как это может повлиять на стратегию выхода на рынок или открыть новые возможности.`,
-  'Conference': `Обобщи темы конференции, актуальность для DeepGlow, кто должен посетить и почему, а также потенциальные высокоэффективные встречи. Включи даты, место и ключевых спикеров.`,
-  'Strategy': `Обобщи основную мысль в 5-7 пунктах. Объясни, почему это важно для стратегии DeepGlow, что нового или неочевидного и как это влияет на структуру рынка или долгосрочное позиционирование.`
+  'Thought leadership': `Extract 1-2 sharp, contrarian insights that could be turned into a short thought leadership post. Highlight tensions, reframing opportunities, or challenged assumptions. Avoid fluff. Write in a confident, clear voice suitable for a public post.`,
+  
+  'Research': `Summarize the core insight in 5-7 bullets. Extract key data points and note any implications, risks, or opportunities for DeepGlow. Explain what's new or non-obvious and why it matters in the context of AI-native, technology-driven markets.`,
+  
+  'IR/Data room': `Highlight key points for investors, financial implications, and potential impact on company valuation. Focus on data, metrics, and trends that matter for investment decisions.`,
+  
+  'Share with team': `Summarize the main ideas that are important to communicate to the team. Highlight practical takeaways, actions, and context for different departments.`,
+  
+  'Product direction': `Analyze how this information impacts product development. Identify trends, opportunities, and threats for product strategy. Focus on actionable insights for roadmap planning.`,
+  
+  'Competitive landscape': `Identify what this suggests about competitors, substitutes, or emerging threats. Focus on strategic signals, positioning shifts, and market direction—not feature lists.`,
+  
+  'BD': `Highlight partnership, channel, or ecosystem implications. Identify who might care, why, and how this could impact GTM motion or open new avenues.`,
+  
+  'Conference': `Summarize conference themes, relevance to DeepGlow, who should attend and why, and potential high-impact meetings. Include dates, location, and key speakers if available.`,
+  
+  'Strategy': `Summarize the core insight in 5-7 bullets. Explain why it matters for DeepGlow's strategy, what's new or non-obvious, and how it impacts market structure or long-term positioning.`
 };
+
+const SYSTEM_PROMPT = `You are the CEO of a technology company. Your writing style: sharp, visionary, sophisticated, grounded in data and reality. Optimize all responses for fast executive scanning. Always focus on implications and actions for DeepGlow.`;
 
 app.get('/health', (req, res) => {
   res.status(200).json({
@@ -43,7 +52,6 @@ app.post('/api/capture', async (req, res) => {
     const notionPage = await notion.pages.create({
       parent: { database_id: process.env.NOTION_DATABASE_ID },
       properties: {
-        // ВАЖНО: поле называется "Name", а не "Title"
         'Name': {
           title: [{ text: { content: pageData.title || 'Без названия' } }]
         },
@@ -128,7 +136,6 @@ async function processAIAndUpdateNotion(pageId, intent, content, title) {
   }
 }
 
-// Генерация AI Summary
 async function generateAISummary(intent, content) {
   const userPrompt = VECTOR_M_PROMPTS[intent] || VECTOR_M_PROMPTS['Research'];
   
@@ -137,35 +144,34 @@ async function generateAISummary(intent, content) {
     messages: [
       { 
         role: "system", 
-        content: "Ты CEO технологической компании. Пиши четко, по делу, без лишних слов." 
+        content: SYSTEM_PROMPT 
       },
       { 
         role: "user", 
-        content: `${userPrompt}\n\nТЕКСТ:\n${content.substring(0, 5000)}`
+        content: `${userPrompt}\n\nTEXT TO ANALYZE:\n${content.substring(0, 8000)}`
       }
     ],
-    max_tokens: 600,
+    max_tokens: 800,
     temperature: 0.7
   });
   
   return completion.choices[0].message.content;
 }
 
-// Функции определения действий и приоритетов
 function getNextBestAction(intent) {
   const actions = {
-    'Thought leadership': 'Написать пост для LinkedIn/блога',
-    'Research': 'Поделиться с командой исследований',
-    'IR/Data room': 'Обновить материалы для инвесторов',
-    'Share with team': 'Распространить команде',
-    'Product direction': 'Обсудить на продуктовой встрече',
-    'Competitive landscape': 'Обновить анализ конкурентов',
-    'BD': 'Исследовать возможности партнёрства',
-    'Conference': 'Запланировать участие/доклад',
-    'Strategy': 'Включить в стратегическое обсуждение'
+    'Thought leadership': 'Draft LinkedIn/blog post',
+    'Research': 'Share with research team',
+    'IR/Data room': 'Update investor materials',
+    'Share with team': 'Distribute to relevant teams',
+    'Product direction': 'Discuss in product meeting',
+    'Competitive landscape': 'Update competitor analysis',
+    'BD': 'Research partnership opportunities',
+    'Conference': 'Plan attendance/speaking',
+    'Strategy': 'Include in strategic discussion'
   };
   
-  return actions[intent] || 'Рассмотреть на ближайшей встрече';
+  return actions[intent] || 'Review at next meeting';
 }
 
 function getPriority(intent) {
