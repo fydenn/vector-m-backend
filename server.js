@@ -190,6 +190,58 @@ function getPriority(intent) {
   return priorities[intent] || 'P3';
 }
 
+// 🔍 Эндпоинт для проверки статуса страницы
+app.get('/api/status/:pageId', async (req, res) => {
+  try {
+    const { pageId } = req.params;
+    console.log(`🔍 Запрос статуса для страницы: ${pageId}`);
+    
+    // Получаем страницу из Notion
+    const page = await notion.pages.retrieve({ page_id: pageId });
+    
+    // Извлекаем свойства
+    const status = page.properties.Status?.select?.name || 'Unknown';
+    const aiSummary = page.properties['AI Summary']?.rich_text?.[0]?.text?.content || '';
+    const title = page.properties.Title?.title?.[0]?.plain_text || 'Без названия';
+    const intent = page.properties.Intent?.select?.name || 'Unknown';
+    
+    res.json({
+      success: true,
+      pageId,
+      status,
+      hasAISummary: !!aiSummary,
+      aiSummaryLength: aiSummary.length,
+      title,
+      intent,
+      lastEdited: page.last_edited_time
+    });
+    
+  } catch (error) {
+    console.error(`❌ Ошибка получения статуса: ${error.message}`);
+    
+    // Проверяем тип ошибки
+    if (error.message.includes('Could not find page with ID')) {
+      res.status(404).json({
+        success: false,
+        error: 'Page not found',
+        message: 'Запись не найдена в Notion. Убедитесь, что pageId корректен.'
+      });
+    } else if (error.message.includes('API token is invalid')) {
+      res.status(401).json({
+        success: false,
+        error: 'Notion token invalid',
+        message: 'Неверный Notion токен. Проверьте переменную NOTION_TOKEN.'
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        message: 'Ошибка при запросе статуса'
+      });
+    }
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Vector-M Backend запущен на порту ${PORT}`);
