@@ -8,104 +8,58 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Инициализация клиентов
-const notion = new Client({ 
-  auth: process.env.NOTION_TOKEN 
-});
-
-const openai = new OpenAI({ 
-  apiKey: process.env.OPENAI_API_KEY 
-});
+const notion = new Client({ auth: process.env.NOTION_TOKEN });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Реестр промптов Vector-M
 const VECTOR_M_PROMPTS = {
   'Thought leadership': `Извлеки 1-2 точных, контринтуитивных инсайта, которые можно превратить в короткий пост для экспертного позиционирования. Подчеркни противоречия, возможности для переосмысления или оспариваемые предположения. Избегай "воды". Пиши уверенным, ясным языком, подходящим для публичного поста.`,
-  
   'Research': `Обобщи основную мысль в 5-7 пунктах. Выдели ключевые данные и отметь любые последствия, риски или возможности для DeepGlow. Объясни, что нового или неочевидного и почему это важно в контексте нативных для ИИ технологий.`,
-  
   'IR/Data room': `Выдели ключевые моменты для инвесторов, финансовые импликации и потенциальное влияние на оценку компании. Акцентируй внимание на данных, метриках и трендах.`,
-  
   'Share with team': `Обобщи основные идеи, которые важно донести команде. Выдели практические выводы, действия и контекст для разных отделов.`,
-  
   'Product direction': `Проанализируй, как эта информация влияет на развитие продукта. Выдели тренды, возможности и угрозы для продуктовой стратегии.`,
-  
   'Competitive landscape': `Выдели, что это говорит о конкурентах, заменителях или возникающих угрозах. Сосредоточься на стратегических сигналах, сдвигах в позиционировании и направлении рынка — не на списках функций.`,
-  
   'BD': `Подчеркни последствия для партнёрств, каналов или экосистемы. Определи, кому это может быть важно, почему и как это может повлиять на стратегию выхода на рынок или открыть новые возможности.`,
-  
   'Conference': `Обобщи темы конференции, актуальность для DeepGlow, кто должен посетить и почему, а также потенциальные высокоэффективные встречи. Включи даты, место и ключевых спикеров.`,
-  
   'Strategy': `Обобщи основную мысль в 5-7 пунктах. Объясни, почему это важно для стратегии DeepGlow, что нового или неочевидного и как это влияет на структуру рынка или долгосрочное позиционирование.`
 };
 
-app.get('/api/database-info', async (req, res) => {
-  try {
-    const database = await notion.databases.retrieve({
-      database_id: process.env.NOTION_DATABASE_ID
-    });
-    
-    res.json({
-      title: database.title,
-      properties: database.properties
-    });
-    
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Health check
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'OK',
     timestamp: new Date().toISOString(),
-    service: 'Vector-M Backend',
-    version: '1.0.0'
+    service: 'Vector-M Backend'
   });
 });
 
-// Main endpoint для захвата сигналов
-// Замените функцию создания страницы на эту:
+// Main endpoint
 app.post('/api/capture', async (req, res) => {
   try {
     const { intent, intentNote, pageData } = req.body;
     
     console.log(`📥 Получен сигнал: ${intent}`);
     
-    // 1. Получаем структуру базы, чтобы понять типы полей
-    const database = await notion.databases.retrieve({
-      database_id: process.env.NOTION_DATABASE_ID,
-    });
-    
-    // 2. Определяем тип поля Title
-    const titleProperty = database.properties['Title'] || database.properties['Name'];
-    const titleType = titleProperty?.type || 'title';
-    
-    // 3. Создаем страницу с правильным типом поля Title
-    const properties = {
-      'Source URL': { url: pageData.url || 'https://example.com' },
-      'Intent': { select: { name: intent } },
-      'Intent Note': {
-        rich_text: [{ text: { content: intentNote } }]
-      },
-      'Status': { select: { name: 'New' } }
-    };
-    
-    // 4. Добавляем Title в зависимости от типа
-    if (titleType === 'title') {
-      properties['Title'] = {
-        title: [{ text: { content: pageData.title || 'Без названия' } }]
-      };
-    } else {
-      properties['Title'] = {
-        rich_text: [{ text: { content: pageData.title || 'Без названия' } }]
-      };
-    }
-    
-    // 5. Создаем страницу
+    // СОЗДАЕМ СТРАНИЦУ С ПРАВИЛЬНЫМИ ИМЕНАМИ ПОЛЕЙ
     const notionPage = await notion.pages.create({
       parent: { database_id: process.env.NOTION_DATABASE_ID },
-      properties: properties,
+      properties: {
+        // ВАЖНО: поле называется "Name", а не "Title"
+        'Name': {
+          title: [{ text: { content: pageData.title || 'Без названия' } }]
+        },
+        'Source URL': { 
+          url: pageData.url || 'https://example.com' 
+        },
+        'Intent': { 
+          select: { name: intent } 
+        },
+        'Intent Note': {
+          rich_text: [{ text: { content: intentNote } }]
+        },
+        'Status': { 
+          select: { name: 'New' } 
+        }
+      },
       children: [
         {
           object: 'block',
@@ -121,100 +75,38 @@ app.post('/api/capture', async (req, res) => {
 
     console.log(`✅ Страница создана: ${notionPage.id}`);
     
-    // 6. Немедленно возвращаем ответ клиенту
+    // Немедленно возвращаем ответ
     res.json({
       success: true,
       pageId: notionPage.id,
-      message: 'Signal captured. AI Summary will be generated shortly.',
-      titleType: titleType // Для отладки
+      message: 'Signal captured. AI Summary will be generated shortly.'
     });
     
-    // 7. Асинхронно обрабатываем AI Summary
+    // Асинхронно обрабатываем AI Summary
     processAIAndUpdateNotion(notionPage.id, intent, pageData.content, pageData.title);
     
   } catch (error) {
     console.error('❌ Ошибка захвата:', error);
     res.status(500).json({ 
-      error: error.message,
-      details: 'Check server logs for more information'
+      error: error.message
     });
   }
 });
 
-// Функция создания страницы в Notion
-async function createNotionPage(intent, intentNote, pageData) {
-  return await notion.pages.create({
-    parent: { 
-      database_id: process.env.NOTION_DATABASE_ID 
-    },
-    properties: {
-      'Name': {
-        title: [
-          {
-            type: 'text',
-            text: { 
-              content: pageData.title?.substring(0, 2000) || 'Без названия' 
-            }
-          }
-        ]
-      },
-      'Source URL': {
-        url: pageData.url || 'https://example.com'
-      },
-      'Intent': {
-        select: { 
-          name: intent 
-        }
-      },
-      'Intent Note': {
-        rich_text: [
-          {
-            type: 'text',
-            text: { 
-              content: intentNote.substring(0, 2000) 
-            }
-          }
-        ]
-      },
-      'Status': {
-        select: { 
-          name: 'New' 
-        }
-      }
-    },
-    children: [
-      {
-        object: 'block',
-        type: 'paragraph',
-        paragraph: {
-          rich_text: [
-            {
-              type: 'text',
-              text: { 
-                content: (pageData.content || 'Контент не захвачен').substring(0, 2000) 
-              }
-            }
-          ]
-        }
-      }
-    ]
-  });
-}
-
-// Асинхронная генерация AI Summary
+// Асинхронная обработка
 async function processAIAndUpdateNotion(pageId, intent, content, title) {
   try {
-    console.log(`🤖 Начинаю генерацию AI Summary для ${pageId}...`);
+    console.log(`🤖 Генерация AI Summary для ${pageId}...`);
     
-    // 1. Генерируем AI Summary
+    // Генерируем AI Summary
     const aiSummary = await generateAISummary(intent, content);
-    console.log(`✅ AI Summary сгенерирован (${aiSummary.length} chars)`);
+    console.log(`✅ AI Summary готов (${aiSummary.length} chars)`);
     
-    // 2. Определяем Next Best Action и Priority
+    // Определяем Next Best Action и Priority
     const nextBestAction = getNextBestAction(intent);
     const priority = getPriority(intent);
     
-    // 3. Обновляем страницу в Notion с ВСЕМИ полями из вашей базы
+    // Обновляем страницу в Notion
     await notion.pages.update({
       page_id: pageId,
       properties: {
@@ -225,106 +117,74 @@ async function processAIAndUpdateNotion(pageId, intent, content, title) {
         'Next Best Action': { 
           rich_text: [{ text: { content: nextBestAction } }] 
         },
-        'Priority': { select: { name: priority } },
-        'AI Summary Tone': {  // Это формула, но Notion сам ее рассчитает
-          rich_text: [{ text: { content: '' } }]  // Оставляем пустым
-        },
-        'Direction Type': {  // Добавляем по умолчанию
-          select: { name: 'Analyse' }
-        }
+        'Priority': { select: { name: priority } }
       }
     });
     
-    console.log(`🎉 Страница ${pageId} обновлена в Notion`);
-    
-    // 4. Отправляем уведомление в Slack если P0/P1
-    if (priority === 'P0' || priority === 'P1') {
-      await sendSlackNotification(title, intent, priority, nextBestAction, pageId);
-    }
+    console.log(`🎉 Страница ${pageId} обновлена`);
     
   } catch (error) {
-    console.error(`❌ Ошибка обработки страницы ${pageId}:`, error);
-    
-    // Обновляем статус на ошибку
-    try {
-      await notion.pages.update({
-        page_id: pageId,
-        properties: {
-          'Status': { select: { name: 'Parked' } },
-          'AI Summary': {
-            rich_text: [{ 
-              text: { 
-                content: `❌ Ошибка генерации AI Summary: ${error.message}` 
-              } 
-            }]
-          }
-        }
-      });
-    } catch (notionError) {
-      console.error('Не удалось обновить статус ошибки в Notion:', notionError);
-    }
+    console.error(`❌ Ошибка обработки:`, error);
   }
 }
 
-// Test endpoint для проверки Notion connection
-app.get('/api/test-notion', async (req, res) => {
-  try {
-    const database = await notion.databases.retrieve({
-      database_id: process.env.NOTION_DATABASE_ID
-    });
-    
-    res.json({
-      success: true,
-      database: {
-        id: database.id,
-        title: database.title[0]?.text?.content || 'No title',
-        properties: Object.keys(database.properties)
+// Генерация AI Summary
+async function generateAISummary(intent, content) {
+  const userPrompt = VECTOR_M_PROMPTS[intent] || VECTOR_M_PROMPTS['Research'];
+  
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4",
+    messages: [
+      { 
+        role: "system", 
+        content: "Ты CEO технологической компании. Пиши четко, по делу, без лишних слов." 
+      },
+      { 
+        role: "user", 
+        content: `${userPrompt}\n\nТЕКСТ:\n${content.substring(0, 5000)}`
       }
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: 'Notion connection failed',
-      details: error.message
-    });
-  }
-});
+    ],
+    max_tokens: 600,
+    temperature: 0.7
+  });
+  
+  return completion.choices[0].message.content;
+}
 
-// Test endpoint для создания тестовой записи
-app.post('/api/test-create', async (req, res) => {
-  try {
-    const testPage = await notion.pages.create({
-      parent: { database_id: process.env.NOTION_DATABASE_ID },
-      properties: {
-        'Title': {
-          title: [
-            {
-              type: 'text',
-              text: { content: 'Тестовая запись из API' }
-            }
-          ]
-        },
-        'Status': {
-          select: { name: 'New' }
-        }
-      }
-    });
-    
-    res.json({
-      success: true,
-      message: 'Тестовая запись создана',
-      pageId: testPage.id
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: 'Test creation failed',
-      details: error.message
-    });
-  }
-});
+// Функции определения действий и приоритетов
+function getNextBestAction(intent) {
+  const actions = {
+    'Thought leadership': 'Написать пост для LinkedIn/блога',
+    'Research': 'Поделиться с командой исследований',
+    'IR/Data room': 'Обновить материалы для инвесторов',
+    'Share with team': 'Распространить команде',
+    'Product direction': 'Обсудить на продуктовой встрече',
+    'Competitive landscape': 'Обновить анализ конкурентов',
+    'BD': 'Исследовать возможности партнёрства',
+    'Conference': 'Запланировать участие/доклад',
+    'Strategy': 'Включить в стратегическое обсуждение'
+  };
+  
+  return actions[intent] || 'Рассмотреть на ближайшей встрече';
+}
+
+function getPriority(intent) {
+  const priorities = {
+    'IR/Data room': 'P0',
+    'Strategy': 'P1',
+    'Product direction': 'P1',
+    'Thought leadership': 'P2',
+    'Research': 'P2',
+    'Competitive landscape': 'P2',
+    'BD': 'P2',
+    'Conference': 'P3',
+    'Share with team': 'P3'
+  };
+  
+  return priorities[intent] || 'P3';
+}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Vector-M Backend запущен на порту ${PORT}`);
-  console.log(`✅ Health check доступен: http://localhost:${PORT}/health`);
-  console.log(`📝 API endpoint: http://localhost:${PORT}/api/capture`);
 });
